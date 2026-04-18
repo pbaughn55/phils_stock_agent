@@ -1,6 +1,5 @@
 import streamlit as st
 import yfinance as yf
-import time
 from datetime import datetime
 
 st.set_page_config(page_title="Stock Analysis Agent", page_icon="🚀", layout="wide")
@@ -11,17 +10,25 @@ st.markdown("**Professional insights • Analyst targets • Timelines**")
 ticker_input = st.text_input("Enter ticker symbol", value="AMZN", key="ticker")
 
 @st.cache_data(ttl=600, show_spinner=False)   # Cache for 10 minutes
-def fetch_ticker_data(symbol):
-    """Cached fetch to avoid hammering Yahoo Finance"""
+def get_stock_data(symbol: str):
+    """Fetch and return only serializable data"""
     ticker = yf.Ticker(symbol.upper())
-    return ticker
+    return {
+        "info": ticker.info,
+        "history": ticker.history(period="1y"),
+        "news": ticker.news[:5] if ticker.news else [],
+        "calendar": ticker.calendar
+    }
 
 if st.button("Analyze Stock", type="primary", use_container_width=True):
     with st.spinner(f"Fetching latest data for {ticker_input.upper()}..."):
         try:
-            # Use the cached fetch
-            ticker = fetch_ticker_data(ticker_input)
-            info = ticker.info
+            # Get cached data
+            data = get_stock_data(ticker_input)
+            info = data["info"]
+            hist = data["history"]
+            news = data["news"]
+            calendar = data["calendar"]
 
             current_price = info.get('currentPrice') or info.get('regularMarketPrice')
             target_low = info.get('targetLowPrice')
@@ -31,11 +38,8 @@ if st.button("Analyze Stock", type="primary", use_container_width=True):
             num_analysts = info.get('numberOfAnalystOpinions')
             recommendation = info.get('recommendationKey', 'N/A')
 
-            hist = ticker.history(period="1y")
             sma50 = hist['Close'].rolling(50).mean().iloc[-1] if not hist.empty else None
             sma200 = hist['Close'].rolling(200).mean().iloc[-1] if not hist.empty else None
-
-            news = ticker.news[:5] if ticker.news else []
 
             def fmt_price(val):
                 return f"${val:.2f}" if val is not None else "N/A"
@@ -45,7 +49,6 @@ if st.button("Analyze Stock", type="primary", use_container_width=True):
                 except: return "N/A"
 
             # Clean earnings date
-            calendar = ticker.calendar
             if isinstance(calendar, dict) and 'Earnings Date' in calendar:
                 earnings_date = str(calendar.get('Earnings Date'))
             elif hasattr(calendar, 'empty') and not calendar.empty:
@@ -109,7 +112,7 @@ Next earnings ≈ {earnings_date}
         except Exception as e:
             if "Too Many Requests" in str(e) or "rate limit" in str(e).lower():
                 st.error("⏳ Yahoo Finance is rate-limiting us right now.")
-                st.info("Wait 30–60 seconds and try again. (This is common on free Streamlit Cloud.)")
+                st.info("Wait 30–60 seconds and try again.")
             else:
                 st.error(f"❌ Error: {e}")
 
