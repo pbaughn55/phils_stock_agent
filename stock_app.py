@@ -1,5 +1,6 @@
 import streamlit as st
 import yfinance as yf
+import time
 from datetime import datetime
 
 st.set_page_config(page_title="Stock Analysis Agent", page_icon="🚀", layout="wide")
@@ -9,10 +10,17 @@ st.markdown("**Professional insights • Analyst targets • Timelines**")
 
 ticker_input = st.text_input("Enter ticker symbol", value="AMZN", key="ticker")
 
+@st.cache_data(ttl=600, show_spinner=False)   # Cache for 10 minutes
+def fetch_ticker_data(symbol):
+    """Cached fetch to avoid hammering Yahoo Finance"""
+    ticker = yf.Ticker(symbol.upper())
+    return ticker
+
 if st.button("Analyze Stock", type="primary", use_container_width=True):
     with st.spinner(f"Fetching latest data for {ticker_input.upper()}..."):
         try:
-            ticker = yf.Ticker(ticker_input.upper())
+            # Use the cached fetch
+            ticker = fetch_ticker_data(ticker_input)
             info = ticker.info
 
             current_price = info.get('currentPrice') or info.get('regularMarketPrice')
@@ -99,7 +107,11 @@ Next earnings ≈ {earnings_date}
             st.caption("**Disclaimer:** Educational/entertainment only. Not financial advice.")
 
         except Exception as e:
-            st.error(f"❌ Error: {e}")
+            if "Too Many Requests" in str(e) or "rate limit" in str(e).lower():
+                st.error("⏳ Yahoo Finance is rate-limiting us right now.")
+                st.info("Wait 30–60 seconds and try again. (This is common on free Streamlit Cloud.)")
+            else:
+                st.error(f"❌ Error: {e}")
 
 else:
     st.info("👆 Click **Analyze Stock** to get the full report")
